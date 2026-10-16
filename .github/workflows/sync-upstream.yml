@@ -1,0 +1,130 @@
+# Fork only (libracoder/lightcraft): follow upstream releases with the personal additions on top.
+#
+# Daily, or on demand, this takes the newest storytold/lightcraft release tag, replays the commits
+# of `custom` (this fork's default branch) onto it as the `release` branch, and dispatches
+# release.yml there, which builds every platform and drafts "LightCraft v<version>" in this fork.
+#
+# `custom` itself is never rewritten here, so its commits keep their signatures; `release` is a
+# generated build branch. When the commits no longer apply to a new upstream release, nothing is
+# built and an issue is opened instead: rebase `custom` onto the tag locally, then run this again.
+name: Sync upstream release
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Upstream tag to build on (empty: the latest release)"
+        type: string
+        default: ""
+      force:
+        description: "Build even if release already matches"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: storytold/lightcraft
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: custom
+          fetch-depth: 0
+
+      - name: Find the upstream release
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="${INPUT_TAG:-$(gh release view --repo "$UPSTREAM" --json tagName --jq .tagName)}"
+          git remote add upstream "https://github.com/$UPSTREAM.git"
+          git fetch --quiet --tags upstream
+          git rev-parse --verify --quiet "refs/tags/$tag^{commit}" >/dev/null || { echo "::error::no upstream tag $tag"; exit 1; }
+          # the upstream release `custom` was last rebased onto: its commits are the ones after it
+          base="$(git describe --tags --abbrev=0 --match 'v*' custom)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "Upstream $tag; custom is based on $base with $(git rev-list --count "$base..custom") commit(s)."
+
+      - name: Replay custom onto the release
+        id: replay
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          BASE: ${{ steps.tag.outputs.base }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --quiet -B release "$TAG"
+          if ! git cherry-pick --allow-empty "$BASE..custom" > cherry-pick.log 2>&1; then
+            cat cherry-pick.log
+            git diff --name-only --diff-filter=U | sed "s/.*/- \`&\`/" > conflicts.md
+            git cherry-pick --abort
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "conflict=false" >> "$GITHUB_OUTPUT"
+
+      - name: Report a conflict
+        if: steps.replay.outputs.conflict == 'true'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          BASE: ${{ steps.tag.outputs.base }}
+        run: |
+          title="Upstream $TAG: custom commits don't apply"
+          if [ -n "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number')" ]; then
+            echo "Issue already open: $title"
+          else
+            {
+              echo "The commits on \`custom\` (based on $BASE) don't apply cleanly to upstream $TAG, so nothing was built."
+              echo
+              echo "Files in conflict:"
+              cat conflicts.md
+              echo
+              echo "To fix, locally:"
+              echo
+              echo '```sh'
+              echo "git fetch upstream --tags"
+              echo "git switch custom"
+              echo "git rebase --onto $TAG $BASE"
+              echo "# resolve, build, test"
+              echo "git push --force-with-lease origin custom"
+              echo "gh workflow run sync-upstream.yml"
+              echo '```'
+            } > body.md
+            gh issue create --title "$title" --body-file body.md
+          fi
+          echo "::error::custom does not apply to $TAG; see the issue"
+          exit 1
+
+      - name: Push release and build
+        if: steps.replay.outputs.conflict == 'false'
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          # nothing changed since the last build (same upstream tag, same files): stop here
+          if git fetch --quiet origin release 2>/dev/null \
+            && git merge-base --is-ancestor "$TAG" FETCH_HEAD \
+            && git diff --quiet FETCH_HEAD release \
+            && [ "$FORCE" != "true" ]; then
+            echo "release already holds $TAG with the custom commits; nothing to build."
+            exit 0
+          fi
+          git push --force origin release
+          # a push made with the workflow token starts no workflows: dispatch the build instead
+          gh workflow run release.yml --ref release
+          echo "Building $TAG + custom: see the Release workflow runs."
