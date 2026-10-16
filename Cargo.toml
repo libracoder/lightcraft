@@ -90,6 +90,8 @@ egui = "0.36"
 egui_extras = { version = "0.36", default-features = false }
 eframe = { version = "0.36", default-features = false }
 egui_kittest = "0.36"
+# checks a user-chosen UI font parses before egui (which panics on a bad one) gets it; egui's own parser
+skrifa = { version = "0.44", default-features = false, features = ["std"] }
 rfd = "0.17"
 muda = { version = "0.21", default-features = false } # native menu bar (macOS: objc2/AppKit, pure Rust; no GTK)
 # macOS: the profile of the screen showing the window (safe AppKit bindings; muda and wgpu use the same)

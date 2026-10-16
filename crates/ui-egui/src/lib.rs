@@ -11,6 +11,7 @@ pub mod brush_live;
 mod command_error;
 pub mod control;
 pub mod credits;
+pub mod custom;
 pub mod date_picker;
 pub mod docking;
 pub mod export_task;
@@ -246,6 +247,8 @@ pub struct Services {
     pub restore_library: Option<HostAction>,
     /// The system appearance for Appearance Mode ▸ Auto, ahead of egui's own report.
     pub system_theme: Option<SystemThemeFn>,
+    /// Personal additions (`custom`): font and logo dialogs, the logo decoder.
+    pub custom: custom::CustomServices,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -403,6 +406,8 @@ pub struct LightcraftApp {
     pub gpu_notice: bool,
     /// The memory budget setting last applied (MB, 0 = automatic).
     memory_applied: Option<u32>,
+    /// Personal additions (`custom`): what was last applied, the logo texture.
+    pub custom: custom::Custom,
     /// The display profile setting last applied (`app.displayProfile`).
     pub(crate) display_applied: Option<String>,
     /// Why the display profile setting could not be applied (shown in Settings ▸ Display).
@@ -485,6 +490,7 @@ impl LightcraftApp {
             gpu_applied: None,
             gpu_notice: false,
             memory_applied: None,
+            custom: Default::default(),
             display_applied: None,
             display_error: None,
             screen_profile: None,
@@ -995,6 +1001,7 @@ impl LightcraftApp {
     }
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
+        custom::logic(self, ctx);
         if !self.styled {
             theme::install_fonts_with_chinese(ctx, self.chinese_font.as_ref());
             theme::apply(ctx);
