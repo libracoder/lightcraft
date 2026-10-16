@@ -85,7 +85,7 @@ jobs:
           BASE: ${{ steps.tag.outputs.base }}
         run: |
           title="Upstream $TAG: custom commits don't apply"
-          if [ -n "$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[].number')" ]; then
+          if [ -n "$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[].number')" ]; then
             echo "Issue already open: $title"
           else
             {
@@ -105,7 +105,7 @@ jobs:
               echo "gh workflow run sync-upstream.yml"
               echo '```'
             } > body.md
-            gh issue create --title "$title" --body-file body.md
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
           fi
           echo "::error::custom does not apply to $TAG; see the issue"
           exit 1
@@ -126,5 +126,5 @@ jobs:
           fi
           git push --force origin release
           # a push made with the workflow token starts no workflows: dispatch the build instead
-          gh workflow run release.yml --ref release
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref release
           echo "Building $TAG + custom: see the Release workflow runs."
