@@ -3077,6 +3077,7 @@ version = "0.8.0"
 dependencies = [
  "eframe",
  "egui",
+ "image",
  "lightcraft-codecs",
  "lightcraft-engine",
  "lightcraft-raster",
@@ -3496,6 +3497,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "skrifa",
  "toml",
  "web-time",
 ]

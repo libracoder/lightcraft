@@ -283,6 +283,9 @@ pub struct AppSettings {
     /// The monitor's ICC profile previews are shown through (`app.displayProfile`; "" = none:
     /// the display is treated as sRGB).
     pub display_profile: String,
+    /// Personal additions (`crate::custom`): interface font, logo, text size, accent.
+    #[serde(flatten)]
+    pub custom: crate::custom::CustomSettings,
 }
 
 impl Default for AppSettings {
@@ -308,6 +311,7 @@ impl Default for AppSettings {
             light_theme: LightTheme::Silver,
             favorite_themes: Vec::new(),
             display_profile: String::new(),
+            custom: Default::default(),
         }
     }
 }

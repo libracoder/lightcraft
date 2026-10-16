@@ -250,10 +250,10 @@ impl Tokens {
         ctx.data(|d| d.get_temp::<Tokens>(egui::Id::NULL)).unwrap_or_default()
     }
     pub fn font(&self, size: f32) -> FontId {
-        FontId::proportional(size)
+        FontId::proportional(crate::custom::ts(size))
     }
     pub fn semibold(&self, size: f32) -> FontId {
-        FontId::new(size, FontFamily::Name(FONT_SEMIBOLD.into()))
+        FontId::new(crate::custom::ts(size), FontFamily::Name(FONT_SEMIBOLD.into()))
     }
 }
 
@@ -263,7 +263,7 @@ pub fn install_fonts(ctx: &egui::Context) {
 
 /// Install the browser's separately downloaded Chinese face alongside the embedded faces.
 pub fn install_fonts_with_chinese(ctx: &egui::Context, chinese: Option<&Arc<FontData>>) {
-    ctx.set_fonts(font_definitions_with_chinese(lightcraft_engine::CRAFT_FONTS, chinese));
+    ctx.set_fonts(crate::custom::with_ui_font(font_definitions_with_chinese(lightcraft_engine::CRAFT_FONTS, chinese)));
 }
 
 /// Inter remains the default UI face. Egui's default faces and craft-fonts cover other scripts;
@@ -401,7 +401,7 @@ pub fn apply_kind(ctx: &egui::Context, kind: ThemeKind) {
         o.input_options.line_scroll_speed = WHEEL_LINE_POINTS;
         o.input_options.scroll_zoom_speed = WHEEL_ZOOM_PER_POINT;
     });
-    let t = Tokens::for_kind(kind);
+    let t = crate::custom::accented(Tokens::for_kind(kind));
     ctx.data_mut(|d| {
         d.insert_temp(egui::Id::NULL, t);
         d.insert_temp(theme_id(), kind);
@@ -442,6 +442,7 @@ pub fn apply_kind(ctx: &egui::Context, kind: ThemeKind) {
         s.text_styles.insert(egui::TextStyle::Heading, FontId::new(16.0, FontFamily::Name(FONT_SEMIBOLD.into())));
         s.animation_time = 0.08;
     });
+    crate::custom::scale_text_styles(ctx);
 }
 
 #[cfg(test)]

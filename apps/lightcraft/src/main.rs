@@ -27,6 +27,7 @@ mod appearance;
 #[cfg(target_os = "linux")]
 mod colord;
 mod control_server;
+mod custom;
 mod dialog_filter;
 mod editors;
 mod hdr_display;
@@ -418,6 +419,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let _ = DIALOG_PARENT.set(rfd::FileDialog::new().set_parent(cc));
     Services {
+        custom: custom::services(),
         // Commands' file dialogs run on their own thread (#191): a dialog on the UI thread
         // stopped the window answering the compositor, which then reported the app as hung.
         picker: Some(Box::new(move |req: lightcraft_ui_egui::pick::PickRequest| {
@@ -827,7 +829,7 @@ fn main() -> eframe::Result {
             .with_fullsize_content_view(true)
             .with_titlebar_shown(false)
             .with_title_shown(false)
-            .with_icon(app_icon())
+            .with_icon(custom::startup_icon(prefs.as_ref()))
             // Wayland matches the window to packaging/linux/ai.storyteller.lightcraft.desktop by this id
             .with_app_id(APP_ID),
         wgpu_options,
