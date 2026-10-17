@@ -76,11 +76,6 @@ jobs:
             echo "conflict=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # upstream builds macOS on a paid larger runner; the standard one is free for public repos
-          sed -i 's/runs-on: macos-15-xlarge\b/runs-on: macos-15/' .github/workflows/release.yml
-          if ! git diff --quiet; then
-            git commit --quiet -am "fork: build macOS on the free macos-15 runner"
-          fi
           echo "conflict=false" >> "$GITHUB_OUTPUT"
 
       - name: Report a conflict
