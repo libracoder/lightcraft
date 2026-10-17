@@ -1,0 +1,66 @@
+# Fork only (libracoder/lightcraft): build the Apple Silicon macOS app and attach it to a draft
+# release "LightCraft v<version> (custom)". Dispatched by sync-upstream.yml on the `release`
+# branch; upstream's release.yml (every platform) is left as it is and not run here.
+#
+# Unsigned: package.sh signs ad hoc, so macOS asks once before opening the app.
+name: Build macOS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  macos:
+    name: macOS (Apple Silicon)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fonts at upstream's pinned revision
+        run: |
+          # the revision release.yml pins, so this follows upstream's bumps
+          ref="$(grep -A2 'repository: storytold/craft-fonts' .github/workflows/release.yml | sed -n 's/.*ref: \([0-9a-f]\{40\}\).*/\1/p' | head -n1)"
+          [ -n "$ref" ] || { echo "::error::no craft-fonts pin in release.yml"; exit 1; }
+          git clone --quiet --filter=blob:none https://github.com/storytold/craft-fonts craft-fonts
+          git -C craft-fonts checkout --quiet "$ref"
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: build-mac-aarch64
+      - name: Build and package
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+        run: packaging/macos/package.sh --arch aarch64
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        working-directory: dist/release
+        run: |
+          . ../../packaging/env.sh
+          tag="v$VERSION-custom"
+          title="LightCraft v$VERSION (custom)"
+          shasum -a 256 -- * | tee SHA256SUMS.txt
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release view "$tag" --json assets --jq '.assets[].name' | while read -r asset; do
+              gh release delete-asset "$tag" "$asset" --yes
+            done
+            gh release edit "$tag" --draft --title "$title" --target "$GITHUB_SHA"
+            gh release upload "$tag" --clobber -- *
+          else
+            gh release create "$tag" --draft --title "$title" --target "$GITHUB_SHA" \
+              --notes "Upstream v$VERSION with the custom commits, built at ${GITHUB_SHA::9}. Apple Silicon only, unsigned." -- *
+          fi
+          echo "Draft **$title** at \`${GITHUB_SHA::9}\`" >>"$GITHUB_STEP_SUMMARY"
