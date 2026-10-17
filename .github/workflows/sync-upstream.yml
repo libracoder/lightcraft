@@ -2,7 +2,7 @@
 #
 # Daily, or on demand, this takes the newest storytold/lightcraft release tag, replays the commits
 # of `custom` (this fork's default branch) onto it as the `release` branch, and dispatches
-# release.yml there, which builds every platform and drafts "LightCraft v<version>" in this fork.
+# build-mac.yml there, which builds the macOS app and drafts "LightCraft v<version> (custom)".
 #
 # `custom` itself is never rewritten here, so its commits keep their signatures; `release` is a
 # generated build branch. When the commits no longer apply to a new upstream release, nothing is
@@ -126,5 +126,5 @@ jobs:
           fi
           git push --force origin release
           # a push made with the workflow token starts no workflows: dispatch the build instead
-          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref release
-          echo "Building $TAG + custom: see the Release workflow runs."
+          gh workflow run build-mac.yml --repo "$GITHUB_REPOSITORY" --ref release
+          echo "Building $TAG + custom: see the Build macOS workflow runs."
