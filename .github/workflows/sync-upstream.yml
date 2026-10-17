@@ -128,3 +128,9 @@ jobs:
           # a push made with the workflow token starts no workflows: dispatch the build instead
           gh workflow run build-mac.yml --repo "$GITHUB_REPOSITORY" --ref release
           echo "Building $TAG + custom: see the Build macOS workflow runs."
+
+      # GitHub turns off schedules after 60 days without repo activity; re-enabling this workflow
+      # on each run resets that timer (no keepalive commits needed)
+      - name: Keep the schedule alive
+        if: always()
+        run: gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/sync-upstream.yml/enable"
