@@ -38,6 +38,10 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: build-mac-aarch64
+      # the Dock shows the bundle's icon while the app is closed: the aperture logo (the default
+      # in Settings), not upstream's; replaced in this checkout only, so upstream's file is untouched
+      - name: Use the aperture icon
+        run: cp assets/custom-logos/default.icns assets/app-icon/lightcraft.icns
       - name: Build and package
         env:
           CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
