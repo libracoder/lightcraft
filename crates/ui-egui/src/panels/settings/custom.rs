@@ -1,7 +1,6 @@
 //! Settings ▸ Interface: the accent, font, text size and logo rows (see `crate::custom`). A child
 //! of the settings panel so it shares its row helpers.
 
-use egui::RichText;
 use serde_json::json;
 
 use super::{choices, heading, hint, row};
@@ -46,26 +45,11 @@ pub(super) fn interface_section(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &
         choices(ui, "settingsTextSize", &options, &mut app.ui.settings.custom.text_size);
     });
     row(ui, t, crate::i18n::tr("Logo"), |ui| {
-        match &app.custom.logo {
-            Some(tex) => {
-                ui.add(egui::Image::new(tex).fit_to_exact_size(egui::vec2(24.0, 24.0)));
-            }
-            None => {
-                ui.label(RichText::new(crate::i18n::tr("LightCraft (built-in)")).color(t.text));
-            }
+        if let Some(tex) = &app.custom.logo {
+            ui.add(egui::Image::new(tex).fit_to_exact_size(egui::vec2(24.0, 24.0)));
         }
-        let services = &app.services.custom;
-        let r = ui.add_enabled(services.pick_logo.is_some() && services.load_logo.is_some(), egui::Button::new(crate::i18n::tr("Choose…")));
-        register(ui.ctx(), "button:settingsLogo", r.rect);
-        if r.clicked() {
-            let _ = app.run("app.logo", json!({}));
-        }
-        if !app.ui.settings.custom.logo.is_empty() {
-            let r = ui.button(crate::i18n::tr("Use LightCraft logo"));
-            register(ui.ctx(), "button:settingsLogoReset", r.rect);
-            if r.clicked() {
-                let _ = app.run("app.logo", json!({"path": ""}));
-            }
+        if let Some(path) = logo_combo(app, ui) {
+            let _ = app.run("app.logo", json!({"path": path}));
         }
     });
     hint(
@@ -131,6 +115,45 @@ fn font_combo(app: &mut LightcraftApp, ui: &mut egui::Ui) -> Option<String> {
     if pick_other {
         // the dialog runs after the popup closes
         let _ = app.run("app.uiFont", json!({}));
+    }
+    out.filter(|p| *p != current)
+}
+
+/// The logo dropdown: the bundled logos ([`crate::custom::LOGOS`], the default first), the image
+/// file in use if any, and Other… for any image. The choice, when made: a setting value.
+fn logo_combo(app: &mut LightcraftApp, ui: &mut egui::Ui) -> Option<String> {
+    let current = app.ui.settings.custom.logo.clone();
+    let bundled = crate::custom::LOGOS.iter().find(|(id, _)| *id == current);
+    let selected = match bundled {
+        Some((_, name)) => crate::i18n::tr(name).to_string(),
+        None => file_name(&current).unwrap_or_default(),
+    };
+    let enabled = app.services.custom.load_logo.is_some();
+    let mut out = None;
+    let mut pick_other = false;
+    let r = ui.add_enabled_ui(enabled, |ui| {
+        egui::ComboBox::from_id_salt("settingsLogo").width(200.0).selected_text(selected).show_ui(ui, |ui| {
+            for (id, name) in crate::custom::LOGOS {
+                if ui.selectable_label(current == id, crate::i18n::tr(name)).clicked() {
+                    out = Some(id.to_string());
+                }
+            }
+            if bundled.is_none() {
+                ui.separator();
+                let _ = ui.selectable_label(true, file_name(&current).unwrap_or_default()).on_hover_text(&current);
+            }
+            if app.services.custom.pick_logo.is_some() {
+                ui.separator();
+                if ui.selectable_label(false, crate::i18n::tr("Other…")).clicked() {
+                    pick_other = true;
+                }
+            }
+        })
+    });
+    register(ui.ctx(), "combo:settingsLogo", r.inner.response.rect);
+    if pick_other {
+        // the dialog runs after the popup closes
+        let _ = app.run("app.logo", json!({}));
     }
     out.filter(|p| *p != current)
 }

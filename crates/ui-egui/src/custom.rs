@@ -73,8 +73,8 @@ impl Accent {
 pub struct CustomSettings {
     /// Interface font: a `.ttf` / `.otf` / `.ttc` file ("" = Inter, bundled; `app.uiFont`).
     pub ui_font: String,
-    /// The app's logo: an image file used as the window, taskbar and Dock icon and in About
-    /// ("" = LightCraft's own; `app.logo`).
+    /// The app's logo, used as the window, taskbar and Dock icon and in About (`app.logo`): one of
+    /// [`LOGOS`] (`""` = the bundled default) or an image file.
     pub logo: String,
     /// Interface text size in percent (100 = as designed; Settings offers [`TEXT_SIZES`]).
     pub text_size: u32,
@@ -87,8 +87,15 @@ impl Default for CustomSettings {
     }
 }
 
-/// Decode an image file into an app icon (`""` = the app's built-in icon). The host links the
-/// image decoders; the UI crate stays codec-free.
+/// The logos bundled with the app (Settings ▸ Interface ▸ Logo): setting value → name. The host
+/// decodes them ([`CustomServices::load_logo`]); any other value is an image file.
+pub const LOGOS: [(&str, &str); 2] = [("", "Aperture (default)"), (LIGHTCRAFT_LOGO, "LightCraft lynx")];
+
+/// The `logo` setting for upstream's own app icon.
+pub const LIGHTCRAFT_LOGO: &str = "builtin:lightcraft";
+
+/// Decode a logo into an app icon: one of [`LOGOS`] or an image file. The host links the image
+/// decoders; the UI crate stays codec-free.
 pub type LoadIcon = Box<dyn FnMut(&str) -> Result<egui::IconData, String>>;
 
 /// The host services this module uses (`Services::custom`; all desktop only).
@@ -108,7 +115,8 @@ pub struct Custom {
     font_applied: Option<String>,
     look_applied: Option<(u32, Accent)>,
     logo_applied: Option<String>,
-    /// The user's logo as a texture for About and Settings; `None` = LightCraft's own.
+    /// The logo in use as a texture for About and Settings (`None` before the first frame, or
+    /// where the host decodes no logos).
     pub logo: Option<egui::TextureHandle>,
 }
 
@@ -352,22 +360,18 @@ pub fn logic(app: &mut LightcraftApp, ctx: &egui::Context) {
 
 /// Apply the logo setting when it changed: the texture About and Settings show, and the window
 /// icon (Windows and Linux at once; macOS sets the Dock icon at launch only). A logo that no
-/// longer loads falls back to LightCraft's with a notice.
+/// longer loads falls back to the default with a notice.
 pub fn apply_logo(app: &mut LightcraftApp, ctx: &egui::Context) {
     let path = app.ui.settings.custom.logo.clone();
     let previous = app.custom.logo_applied.replace(path.clone());
     if previous.as_deref() == Some(path.as_str()) {
         return;
     }
-    // at launch with the built-in logo the host's own icon is already up
-    if previous.is_none() && path.is_empty() {
-        return;
-    }
     let Some(load) = app.services.custom.load_logo.as_mut() else { return };
     let icon = match load(&path) {
         Ok(icon) => icon,
         Err(e) => {
-            app.notices.push(format!("{}: {e}", crate::i18n::tr("The logo couldn't be loaded, so LightCraft's is used")));
+            app.notices.push(format!("{}: {e}", crate::i18n::tr("The logo couldn't be loaded, so the default is used")));
             app.ui.settings.custom.logo.clear();
             app.custom.logo_applied = Some(String::new());
             app.custom.logo = None;
@@ -377,11 +381,12 @@ pub fn apply_logo(app: &mut LightcraftApp, ctx: &egui::Context) {
             }
         }
     };
-    app.custom.logo = (!app.ui.settings.custom.logo.is_empty()).then(|| {
-        let image = egui::ColorImage::from_rgba_unmultiplied([icon.width as usize, icon.height as usize], &icon.rgba);
-        ctx.load_texture("user-logo", image, egui::TextureOptions::LINEAR)
-    });
-    ctx.send_viewport_cmd(egui::ViewportCommand::Icon(Some(Arc::new(icon))));
+    let image = egui::ColorImage::from_rgba_unmultiplied([icon.width as usize, icon.height as usize], &icon.rgba);
+    app.custom.logo = Some(ctx.load_texture("app-logo", image, egui::TextureOptions::LINEAR));
+    // at launch the host set the window icon from the same setting already
+    if previous.is_some() {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Icon(Some(Arc::new(icon))));
+    }
 }
 
 // ------------------------------------------------------------------------------------ Commands
@@ -416,14 +421,13 @@ fn set_ui_font_command(app: &mut LightcraftApp, p: &Value) -> Result<Value, Stri
     Ok(json!({"path": path}))
 }
 
-/// `app.logo {path?}`: use the image at `path` as the app's logo (`""` = LightCraft's), or one
-/// chosen in a dialog. The image is decoded before anything changes; applied on the next frame.
+/// `app.logo {path?}`: use one of [`LOGOS`] (`""` = the default) or the image at `path` as the
+/// app's logo, or one chosen in a dialog. The logo is decoded before anything changes; applied on
+/// the next frame.
 fn set_logo(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
     let Some(path) = path_or_pick(p, app.services.custom.pick_logo.as_mut())? else { return Ok(Value::Null) };
-    if !path.is_empty() {
-        let load = app.services.custom.load_logo.as_mut().ok_or("logos can't be read on this platform")?;
-        load(&path)?;
-    }
+    let load = app.services.custom.load_logo.as_mut().ok_or("logos can't be read on this platform")?;
+    load(&path)?;
     app.ui.settings.custom.logo = path.clone();
     Ok(json!({"path": path}))
 }
@@ -554,6 +558,7 @@ mod tests {
         let icon = |path: &str| -> Result<egui::IconData, String> {
             match path {
                 "" => Ok(egui::IconData { rgba: vec![0; 4], width: 1, height: 1 }),
+                super::LIGHTCRAFT_LOGO => Ok(egui::IconData { rgba: vec![9; 36], width: 3, height: 3 }),
                 "logo.png" => Ok(egui::IconData { rgba: vec![255; 16], width: 2, height: 2 }),
                 other => Err(format!("{other}: not an image")),
             }
@@ -568,14 +573,20 @@ mod tests {
         super::apply_logo(&mut app, &ctx);
         assert_eq!(app.custom.logo.as_ref().map(|t| t.size()), Some([2, 2]));
 
+        app.run("app.logo", json!({"path": super::LIGHTCRAFT_LOGO})).unwrap();
+        super::apply_logo(&mut app, &ctx);
+        assert_eq!(app.custom.logo.as_ref().map(|t| t.size()), Some([3, 3]));
+
+        // the bundled default shows from the first frame too
         app.run("app.logo", json!({"path": ""})).unwrap();
         super::apply_logo(&mut app, &ctx);
-        assert!(app.custom.logo.is_none());
+        assert_eq!(app.custom.logo.as_ref().map(|t| t.size()), Some([1, 1]));
 
-        // saved settings naming a file that is gone: a notice, and LightCraft's logo
+        // saved settings naming a file that is gone: a notice, and the default logo
         app.ui.settings.custom.logo = "moved.png".into();
         super::apply_logo(&mut app, &ctx);
-        assert!(app.custom.logo.is_none() && app.ui.settings.custom.logo.is_empty());
+        assert_eq!(app.custom.logo.as_ref().map(|t| t.size()), Some([1, 1]));
+        assert!(app.ui.settings.custom.logo.is_empty());
         assert!(app.notices.iter().any(|n| n.contains("moved.png")), "{:?}", app.notices);
     }
 }
